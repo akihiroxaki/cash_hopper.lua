@@ -1,0 +1,41 @@
+task.wait(10)
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local function hasCashEvent()
+    local gui = player:FindFirstChildOfClass("PlayerGui")
+    if not gui then return false end
+
+    for _, v in ipairs(gui:GetDescendants()) do
+        if (v:IsA("TextLabel") or v:IsA("TextButton"))
+            and v.Visible
+            and v.Text:lower():find("cash event", 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+if hasCashEvent() then
+    warn("Cash Event found! Staying here.")
+else
+    local ok, err = pcall(function()
+        local url = "https://raw.githubusercontent.com/LeoKholYt/roblox/main/lk_serverhop.lua"
+        local source = game:HttpGet(url)
+        local fn, loadErr = loadstring(source)
+
+        assert(fn, loadErr)
+
+        local module = fn()
+        assert(module and type(module.Teleport) == "function",
+            "Server-hop module failed to load")
+
+        module:Teleport(game.PlaceId)
+    end)
+
+    if not ok then
+        warn("Server hopper error: " .. tostring(err))
+    end
+end
