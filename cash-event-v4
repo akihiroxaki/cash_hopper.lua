@@ -1,0 +1,85 @@
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local function hasCashEventStarted()
+    local gui = player:FindFirstChildOfClass("PlayerGui")
+    if not gui then return false end
+
+    for _, item in ipairs(gui:GetDescendants()) do
+        if item:IsA("TextLabel") or item:IsA("TextButton") then
+            local visible = true
+            local parent = item
+
+            while parent and parent ~= gui do
+                if parent:IsA("GuiObject") and not parent.Visible then
+                    visible = false
+                    break
+                end
+
+                if parent:IsA("ScreenGui") and not parent.Enabled then
+                    visible = false
+                    break
+                end
+
+                parent = parent.Parent
+            end
+
+            if visible and item.Text:lower():find(
+                "cash event has started!", 1, true
+            ) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+print("[Cash Hopper] Searching for Cash Event...")
+
+local found = false
+local deadline = os.clock() + 15
+
+while os.clock() < deadline do
+    if hasCashEventStarted() then
+        found = true
+        break
+    end
+
+    task.wait(0.25)
+end
+
+if found then
+    warn("[Cash Hopper] Cash Event found!")
+    warn("[Cash Hopper] Waiting 4 minutes and 30 seconds...")
+
+    task.wait(270)
+
+    warn("[Cash Hopper] Cooldown finished. Searching again...")
+else
+    warn("[Cash Hopper] No notification detected.")
+end
+
+local ok, err = pcall(function()
+    local url =
+        "https://raw.githubusercontent.com/LeoKholYt/roblox/main/lk_serverhop.lua"
+
+    local source = game:HttpGet(url)
+    local fn, loadErr = loadstring(source)
+
+    assert(fn, loadErr)
+
+    local module = fn()
+
+    assert(
+        module and type(module.Teleport) == "function",
+        "Server-hop module failed to load"
+    )
+
+    module:Teleport(game.PlaceId)
+end)
+
+if not ok then
+    warn("[Cash Hopper] Error: " .. tostring(err))
+end
