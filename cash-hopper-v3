@@ -1,78 +1,75 @@
 
 local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 
-local function hasCashEventStarted()
-    local gui = player:FindFirstChildOfClass("PlayerGui")
-    if not gui then return false end
+local url = "https://raw.githubusercontent.com/LeoKholYt/roblox/main/lk_serverhop.lua"
+local module
 
-    for _, item in ipairs(gui:GetDescendants()) do
-        if item:IsA("TextLabel") or item:IsA("TextButton") then
-            local visible = true
-            local parent = item
+-- Retry loading the hopper if downloading fails.
+while not module do
+    local ok, result = pcall(function()
+        local source = game:HttpGet(url)
+        local fn, loadErr = loadstring(source)
 
-            while parent and parent ~= gui do
-                if parent:IsA("GuiObject") and not parent.Visible then
-                    visible = false
-                    break
-                end
+        assert(fn, loadErr)
 
-                if parent:IsA("ScreenGui") and not parent.Enabled then
-                    visible = false
-                    break
-                end
+        local loadedModule = fn()
 
-                parent = parent.Parent
-            end
+        assert(
+            loadedModule
+                and type(loadedModule.Teleport) == "function",
+            "Invalid server-hop module"
+        )
 
-            if visible and item.Text:lower():find(
-                "cash event has started", 1, true
-            ) then
-                return true
-            end
+        return loadedModule
+    end)
+
+    if ok then
+        module = result
+    else
+        warn("[Cash Hopper] Load failed: " .. tostring(result))
+        warn("[Cash Hopper] Retrying in 5 seconds...")
+        task.wait(5)
+    end
+end
+
+local retryPending = false
+
+local function retryHop(reason)
+    if retryPending then return end
+    retryPending = true
+
+    warn("[Cash Hopper] Teleport failed: " .. tostring(reason))
+    warn("[Cash Hopper] Retrying in 5 seconds...")
+
+    task.delay(5, function()
+        retryPending = false
+
+        local ok, err = pcall(function()
+            module:Teleport(game.PlaceId)
+        end)
+
+        if not ok then
+            retryHop(err)
+        end
+    end)
+end
+
+-- Listen for Roblox teleport failures.
+TeleportService.TeleportInitFailed:Connect(
+    function(failedPlayer, result, errorMessage)
+        if failedPlayer == player then
+            retryHop(tostring(result) .. ": " .. tostring(errorMessage))
         end
     end
+)
 
-    return false
-end
-
-print("[Cash Hopper] Looking for Cash Event...")
-
-local found = false
-local deadline = os.clock() + 15
-
-while os.clock() < deadline do
-    if hasCashEventStarted() then
-        found = true
-        break
-    end
-
-    task.wait(0.25)
-end
-
-if found then
-    warn("[Cash Hopper] Cash Event confirmed!")
-    warn("[Cash Hopper] Waiting 4 minutes 30 seconds...")
-    task.wait(270)
-else
-    warn("[Cash Hopper] Cash Event notification not detected.")
-end
-
+-- Start the first hop.
 local ok, err = pcall(function()
-    local url =
-        "https://raw.githubusercontent.com/LeoKholYt/roblox/main/lk_serverhop.lua"
-
-    local source = game:HttpGet(url)
-    local fn, loadErr = loadstring(source)
-    assert(fn, loadErr)
-
-    local module = fn()
-    assert(module and type(module.Teleport) == "function",
-        "Server-hop module failed to load")
-
     module:Teleport(game.PlaceId)
 end)
 
 if not ok then
-    warn("[Cash Hopper] Error: " .. tostring(err))
+    retryHop(err)
 end
