@@ -1,85 +1,97 @@
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
 
-local function hasCashEventStarted()
-    local gui = player:FindFirstChildOfClass("PlayerGui")
-    if not gui then return false end
+local placeId = game.PlaceId
+local currentJobId = game.JobId
 
-    for _, item in ipairs(gui:GetDescendants()) do
-        if item:IsA("TextLabel") or item:IsA("TextButton") then
-            local visible = true
-            local parent = item
+local MIN_PLAYERS = 7
+local MAX_PAGES = 5
 
-            while parent and parent ~= gui do
-                if parent:IsA("GuiObject") and not parent.Visible then
-                    visible = false
-                    break
-                end
+local bestServer = nil
+local cursor = nil
 
-                if parent:IsA("ScreenGui") and not parent.Enabled then
-                    visible = false
-                    break
-                end
+print("[Server Hopper] Searching for 8/9 or 7/9 servers...")
 
-                parent = parent.Parent
-            end
+for page = 1, MAX_PAGES do
+    local url =
+        "https://games.roblox.com/v1/games/"
+        .. placeId
+        .. "/servers/Public?sortOrder=Desc&limit=100"
 
-            if visible and item.Text:lower():find(
-                "cash event has started!", 1, true
-            ) then
-                return true
+    if cursor then
+        url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+    end
+
+    local ok, response = pcall(function()
+        return game:HttpGet(url)
+    end)
+
+    if not ok then
+        warn("[Server Hopper] Failed to fetch servers:", response)
+        break
+    end
+
+    local parsed, result = pcall(function()
+        return HttpService:JSONDecode(response)
+    end)
+
+    if not parsed or type(result.data) ~= "table" then
+        warn("[Server Hopper] Invalid server-list response.")
+        break
+    end
+
+    for _, server in ipairs(result.data) do
+        local playing = tonumber(server.playing)
+        local maxPlayers = tonumber(server.maxPlayers)
+
+        if server.id
+            and server.id ~= currentJobId
+            and playing
+            and maxPlayers
+            and maxPlayers == 9
+            and playing >= MIN_PLAYERS
+            and playing < maxPlayers then
+
+            if not bestServer
+                or playing > bestServer.playing then
+                bestServer = {
+                    id = server.id,
+                    playing = playing,
+                    maxPlayers = maxPlayers
+                }
             end
         end
     end
 
-    return false
-end
+    cursor = result.nextPageCursor
 
-print("[Cash Hopper] Searching for Cash Event...")
-
-local found = false
-local deadline = os.clock() + 15
-
-while os.clock() < deadline do
-    if hasCashEventStarted() then
-        found = true
+    if not cursor then
         break
     end
 
-    task.wait(0.25)
+    task.wait(0.3)
 end
 
-if found then
-    warn("[Cash Hopper] Cash Event found!")
-    warn("[Cash Hopper] Waiting 4 minutes and 30 seconds...")
-
-    task.wait(270)
-
-    warn("[Cash Hopper] Cooldown finished. Searching again...")
-else
-    warn("[Cash Hopper] No notification detected.")
-end
-
-local ok, err = pcall(function()
-    local url =
-        "https://raw.githubusercontent.com/LeoKholYt/roblox/main/lk_serverhop.lua"
-
-    local source = game:HttpGet(url)
-    local fn, loadErr = loadstring(source)
-
-    assert(fn, loadErr)
-
-    local module = fn()
-
-    assert(
-        module and type(module.Teleport) == "function",
-        "Server-hop module failed to load"
+if bestServer then
+    print(
+        "[Server Hopper] Joining server:",
+        bestServer.playing .. "/" .. bestServer.maxPlayers
     )
 
-    module:Teleport(game.PlaceId)
-end)
+    local ok, err = pcall(function()
+        TeleportService:TeleportToPlaceInstance(
+            placeId,
+            bestServer.id,
+            Players.LocalPlayer
+        )
+    end)
 
-if not ok then
-    warn("[Cash Hopper] Error: " .. tostring(err))
+    if not ok then
+        warn("[Server Hopper] Teleport failed:", err)
+    end
+else
+    warn("[Server Hopper] No eligible 7/9 or 8/9 server found.")
+    warn("[Server Hopper] Try running the script again.")
 end
